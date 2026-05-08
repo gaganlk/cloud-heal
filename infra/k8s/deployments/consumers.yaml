@@ -1,0 +1,105 @@
+---
+# ── Prediction Service Deployment ────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-prediction-consumer
+  namespace: aiops-platform
+  labels:
+    app: aiops-prediction-consumer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aiops-prediction-consumer
+  template:
+    metadata:
+      labels:
+        app: aiops-prediction-consumer
+    spec:
+      containers:
+        - name: prediction-consumer
+          image: aiops/prediction-consumer:2.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "services.prediction.consumer"]
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aiops-secrets
+                  key: redis-url
+          envFrom:
+            - configMapRef:
+                name: aiops-config
+          resources:
+            requests:
+              memory: "512Mi"   # IsolationForest model in memory
+              cpu: "300m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: model-storage
+              mountPath: /app/ml/models
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: ml-models-pvc
+---
+# ── ML Models PVC ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ml-models-pvc
+  namespace: aiops-platform
+spec:
+  accessModes:
+    - ReadWriteMany   # Shared across prediction consumer replicas
+  resources:
+    requests:
+      storage: 1Gi
+---
+# ── Healing Consumer Deployment ───────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-healing-consumer
+  namespace: aiops-platform
+  labels:
+    app: aiops-healing-consumer
+spec:
+  replicas: 1   # Single replica to prevent duplicate healing actions
+  selector:
+    matchLabels:
+      app: aiops-healing-consumer
+  template:
+    metadata:
+      labels:
+        app: aiops-healing-consumer
+    spec:
+      containers:
+        - name: healing-consumer
+          image: aiops/healing-consumer:2.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "services.healing.consumer"]
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aiops-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aiops-secrets
+                  key: database-url
+          envFrom:
+            - configMapRef:
+                name: aiops-config
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

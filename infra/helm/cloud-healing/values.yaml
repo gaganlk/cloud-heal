@@ -1,0 +1,154 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Cloud Healing Platform — Helm Values (Development / Staging defaults)
+# Override with values.production.yaml for production deployments.
+# ──────────────────────────────────────────────────────────────────────────────
+
+global:
+  namespace: cloud-healing
+  imageRegistry: ""           # Set to your ECR/GCR/ACR registry
+  imagePullSecrets: []
+
+# ── Backend ────────────────────────────────────────────────────────────────────
+backend:
+  name: cloud-healing-api
+  image:
+    repository: cloud-healing-backend
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 8000
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+  env:
+    ENV: production
+    UVICORN_WORKERS: "4"
+    # Secrets injected via ExternalSecrets or Vault Agent
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+# ── Frontend ───────────────────────────────────────────────────────────────────
+frontend:
+  name: cloud-healing-ui
+  image:
+    repository: cloud-healing-frontend
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 80
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
+# ── Healing Worker ────────────────────────────────────────────────────────────
+worker:
+  name: cloud-healing-worker
+  image:
+    repository: cloud-healing-worker
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+# ── Drift Detection Worker ────────────────────────────────────────────────────
+driftWorker:
+  name: drift-detection-worker
+  enabled: true
+  image:
+    repository: cloud-healing-worker
+    tag: "2.0.0"
+  replicaCount: 1
+  pollIntervalSeconds: 60
+
+# ── PostgreSQL (via Bitnami chart dependency) ──────────────────────────────────
+postgresql:
+  enabled: true
+  auth:
+    database: cloud_healing
+    username: cloudhealing
+    # password set via secret
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: ""
+
+# ── Redis ─────────────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 4Gi
+
+# ── Kafka / Zookeeper ─────────────────────────────────────────────────────────
+kafka:
+  enabled: true
+  replicaCount: 1
+  persistence:
+    enabled: true
+    size: 8Gi
+
+# ── Ingress ────────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # For WebSocket support:
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+  hosts:
+    - host: cloud-healing.local
+      paths:
+        - path: /api
+          pathType: Prefix
+          backend: backend
+        - path: /ws
+          pathType: Prefix
+          backend: backend
+        - path: /
+          pathType: Prefix
+          backend: frontend
+  tls: []
+
+# ── Vault Agent Integration ────────────────────────────────────────────────────
+vault:
+  enabled: false   # Set true to enable Vault Agent Injector annotations
+  addr: "http://vault:8200"
+  mount: "secret"
+  role: "cloud-healing"
+
+# ── Observability ──────────────────────────────────────────────────────────────
+monitoring:
+  prometheus:
+    enabled: true
+    scrapeInterval: 30s
+  grafana:
+    enabled: false   # Set true to deploy Grafana within cluster

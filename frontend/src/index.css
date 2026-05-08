@@ -1,0 +1,202 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+
+:root {
+  --primary: #00d4ff;
+  --primary-glow: rgba(0, 212, 255, 0.4);
+  --secondary: #a855f7;
+  --secondary-glow: rgba(168, 85, 247, 0.4);
+  --dark-bg: #030308;
+  --card-bg: rgba(13, 13, 24, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --text-main: #ffffff;
+  --text-muted: #94a3b8;
+  --accent-green: #10b981;
+  --accent-red: #ef4444;
+  --accent-orange: #f59e0b;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#030308] text-white selection:bg-sky-500/30;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+@layer components {
+  /* Premium Glassmorphism */
+  .glass-premium {
+    @apply backdrop-blur-xl bg-white/[0.03] border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.8)];
+  }
+
+  .glass-dark {
+    @apply backdrop-blur-2xl bg-[#0d0d18]/80 border border-white/5 shadow-2xl;
+  }
+
+  /* Interaction Effects */
+  .hover-glow {
+    @apply transition-all duration-300 hover:shadow-[0_0_25px_rgba(0,212,255,0.25)] hover:border-sky-400/30;
+  }
+
+  .hover-glow-purple {
+    @apply transition-all duration-300 hover:shadow-[0_0_25px_rgba(168,85,247,0.25)] hover:border-purple-400/30;
+  }
+
+  /* Buttons */
+  .btn-premium {
+    @apply relative px-6 py-2.5 rounded-xl font-semibold transition-all duration-300 
+           flex items-center justify-center gap-2 overflow-hidden
+           active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-primary-glow {
+    @apply btn-premium bg-gradient-to-r from-sky-500 to-indigo-500 text-white
+           shadow-[0_4px_20px_rgba(14,165,233,0.3)] hover:shadow-[0_8px_30px_rgba(14,165,233,0.5)]
+           hover:-translate-y-0.5;
+  }
+
+  .btn-secondary-glass {
+    @apply btn-premium glass-premium text-slate-300 hover:text-white hover:bg-white/5;
+  }
+
+  /* Inputs */
+  .input-premium {
+    @apply w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 
+           text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 
+           focus:ring-sky-500/40 focus:border-sky-500/50 focus:bg-white/[0.06]
+           transition-all duration-300;
+  }
+
+  /* Status Badges */
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider;
+  }
+}
+
+/* Custom Utilities */
+.gradient-text-hero {
+  @apply bg-clip-text text-transparent bg-gradient-to-br from-white via-white to-slate-500;
+}
+
+.gradient-sky-purple {
+  @apply bg-gradient-to-br from-sky-400 to-purple-500;
+}
+
+.hero-grid {
+  background-image: 
+    radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0);
+  background-size: 32px 32px;
+}
+
+.mesh-gradient {
+  background: 
+    radial-gradient(at 0% 0%, rgba(0,212,255,0.15) 0, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(168,85,247,0.15) 0, transparent 50%);
+}
+
+/* Animations */
+@keyframes float {
+  0% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(2deg); }
+  100% { transform: translateY(0px) rotate(0deg); }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  70% { transform: scale(1.3); opacity: 0; }
+  100% { transform: scale(1.3); opacity: 0; }
+}
+
+@keyframes typing-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes health-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+}
+
+@keyframes critical-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-typing {
+  animation: typing-blink 1s step-end infinite;
+}
+
+.animate-health-pulse {
+  animation: health-pulse 2s ease-in-out infinite;
+}
+
+.animate-critical-pulse {
+  animation: critical-pulse 1.5s ease-in-out infinite;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+/* War Room terminal overrides */
+.war-room-terminal {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  letter-spacing: 0.02em;
+}
+
+/* Graph node hover lift */
+.react-flow__node:hover {
+  z-index: 1000 !important;
+}
+
+/* Grid pattern for backgrounds */
+.grid-pattern {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Aura glow effect */
+.aura-glow-sky {
+  box-shadow: 0 0 30px rgba(14, 165, 233, 0.3), 0 0 60px rgba(14, 165, 233, 0.1);
+}
+
+.aura-glow-purple {
+  box-shadow: 0 0 30px rgba(168, 85, 247, 0.3), 0 0 60px rgba(168, 85, 247, 0.1);
+}
+
+/* Drift status badge */
+.drift-badge-ok { @apply bg-emerald-500/10 text-emerald-400 border-emerald-500/20; }
+.drift-badge-drifted { @apply bg-yellow-500/10 text-yellow-400 border-yellow-500/20; }
+.drift-badge-critical { @apply bg-rose-500/10 text-rose-400 border-rose-500/20; }
+
+/* Deep glass variant for War Room */
+.glass-warroom {
+  @apply backdrop-blur-3xl border border-white/5 shadow-[0_0_50px_rgba(0,0,0,0.8)];
+  background: rgba(3, 3, 10, 0.96);
+}
+
+/* Premium table row hover */
+.table-row-hover:hover {
+  background: rgba(255, 255, 255, 0.015);
+  box-shadow: inset 3px 0 0 rgba(14, 165, 233, 0.5);
+}

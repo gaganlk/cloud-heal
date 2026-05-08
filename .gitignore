@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Frontend
+node_modules/
+dist/
+.next/
+out/
+build/
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+migration_dump.json
+drift_output.json
+login.json
+structure.txt
+server_error.log
+aiops_local.db
+backend/cloud_healing.db
+scratch/
+!scratch/.keep

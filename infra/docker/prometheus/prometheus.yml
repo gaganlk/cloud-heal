@@ -1,0 +1,29 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'aiops-local'
+    environment: 'development'
+
+scrape_configs:
+  # ── AIOps Backend ──────────────────────────────────────────────────────────
+  - job_name: 'aiops-backend'
+    static_configs:
+      - targets: ['backend:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # ── Infrastructure (via exporters if available) ──────────────────────────
+  # Note: redis and postgresql require dedicated exporters to be scraped.
+  # Removing direct port targets as they cause connection abortions.
+
+  # ── Kafka JMX ─────────────────────────────────────────────────────────────
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka:9101']
+    # JMX metrics exposed via jmx_prometheus_javaagent
+
+  # ── Prometheus Self-Monitoring ─────────────────────────────────────────────
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

@@ -1,0 +1,261 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# AIOps Platform — Production Ready Compose
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Database Layer ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: aiops_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aiops_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-securepassword123}
+      POSTGRES_DB: ${POSTGRES_DB:-cloud_healing_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/init-grafana-db.sql:/docker-entrypoint-initdb.d/init-grafana-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiops_user} -d ${POSTGRES_DB:-cloud_healing_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: aiops_pgbouncer
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-aiops_user}:${POSTGRES_PASSWORD:-securepassword123}@postgres:5432/${POSTGRES_DB:-cloud_healing_db}"
+      MAX_CLIENT_CONN: "200"
+      DEFAULT_POOL_SIZE: "25"
+      POOL_MODE: "transaction"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -U ${POSTGRES_USER:-aiops_user} -d ${POSTGRES_DB:-cloud_healing_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Cache Layer ─────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: aiops_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-secure-redis-pass}
+    # SECURITY: Redis is NOT exposed to the host network.
+    # Backend connects via internal Docker network (hostname: redis).
+    # To enable local debugging: uncomment the line below and restrict to 127.0.0.1
+    # ports:
+    #   - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-secure-redis-pass}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend API ─────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      target: production
+    container_name: aiops_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Override only values that differ from .env defaults inside Docker
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-secure-redis-pass}@redis:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    ports:
+      - "8000:8000"
+    volumes:
+      - model_data:/app/data/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 30s
+
+  # ── Background Scheduler ───────────────────────────────────────────────────
+  scheduler:
+    build:
+      context: .
+      target: production
+    container_name: aiops_scheduler
+    command: ["python", "app/services/scheduler.py"]
+    env_file: .env
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  # ── Workers ─────────────────────────────────────────────────────────────────
+  prediction_worker:
+    build:
+      context: .
+      target: production
+    container_name: aiops_prediction_worker
+    command: ["python", "-m", "app.services.prediction.consumer"]
+    env_file: .env
+    depends_on:
+      backend:
+        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  healing_worker:
+    build:
+      context: .
+      target: production
+    container_name: aiops_healing_worker
+    command: ["python", "-m", "app.services.healing.consumer"]
+    env_file: .env
+    depends_on:
+      backend:
+        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+
+  # ── Frontend ────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+    container_name: aiops_frontend
+    ports:
+      - "8085:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Observability Layer ─────────────────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: aiops_jaeger
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aiops_prometheus
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aiops_grafana
+    environment:
+      GF_DATABASE_TYPE: postgres
+      GF_DATABASE_HOST: postgres:5432
+      GF_DATABASE_NAME: grafana_db
+      GF_DATABASE_USER: grafana_user
+      GF_DATABASE_PASSWORD: secure_grafana_password
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - postgres
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    container_name: aiops_loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  # ── Message Bus ─────────────────────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: aiops_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: aiops_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      # DEV ONLY: Expose Kafka to host for local tooling (kafka-ui, cli).
+      # Remove in production — use internal Docker hostname 'kafka:29092'.
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  init-kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: aiops_init_kafka
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: [ '/bin/sh', '-c' ]
+    command: |
+      "
+      echo -e 'Creating kafka topics'
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic telemetry --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic healing_actions --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic global_telemetry --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic healing_triggers --replication-factor 1 --partitions 3
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic dead_letter_queue --replication-factor 1 --partitions 1
+      echo -e 'Successfully created topics'
+      "
+
+volumes:
+  postgres_data:
+  model_data:

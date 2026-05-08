@@ -1,0 +1,198 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/aiops-cloud-healing
+  PYTHON_VERSION: "3.13"
+  NODE_VERSION: "22"
+
+jobs:
+  # ── Backend Lint & Test ──────────────────────────────────────────────────────
+  backend-lint:
+    name: Backend — Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install ruff
+        run: pip install ruff
+      - name: Run ruff
+        run: ruff check . --exclude=migrations,alembic
+
+  backend-test:
+    name: Backend — Pytest
+    runs-on: ubuntu-latest
+    needs: backend-lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: aiops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: "postgresql+asyncpg://test:test@localhost:5432/aiops_test"
+      SECRET_KEY: "ci-test-secret-key-do-not-use-in-production"
+      ENCRYPTION_KEY: "LzIMhw_fgXb5aYCqEDIYu4w1k3YqZNqjJ1pDlCXlmk4="
+      ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: |
+          set PYTHONPATH=.
+          pytest tests/ -x --tb=short -q --timeout=60
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+  # ── Frontend Lint & Build ────────────────────────────────────────────────────
+  frontend-lint:
+    name: Frontend — ESLint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+
+  frontend-build:
+    name: Frontend — Vite Build
+    runs-on: ubuntu-latest
+    needs: frontend-lint
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+  # ── Docker Build & Push ──────────────────────────────────────────────────────
+  docker-build:
+    name: Docker — Build & Push
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-build]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # ── Deploy to Kubernetes ─────────────────────────────────────────────────────
+  deploy:
+    name: Deploy — Kubernetes Rolling Update
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Set image tag
+        run: |
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+          kubectl set image deployment/aiops-backend \
+            backend=${IMAGE_TAG} \
+            --namespace aiops-prod
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/aiops-backend \
+            --namespace aiops-prod \
+            --timeout=300s
+
+      - name: Verify health
+        run: |
+          sleep 10
+          kubectl run health-check --rm -it --restart=Never \
+            --image=curlimages/curl:latest \
+            -- curl -f http://aiops-backend-svc/health

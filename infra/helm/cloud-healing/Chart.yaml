@@ -1,0 +1,15 @@
+apiVersion: v2
+name: cloud-healing
+description: Autonomous Multi-Cloud AIOps Healing Platform — Production Helm Chart
+type: application
+version: 2.0.0
+appVersion: "2.0.0"
+keywords:
+  - aiops
+  - cloud-healing
+  - kubernetes
+  - autonomous
+home: https://github.com/your-org/cloud-healing-system
+maintainers:
+  - name: Platform Team
+    email: platform@yourorg.com

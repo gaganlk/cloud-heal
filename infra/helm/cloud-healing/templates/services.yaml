@@ -1,0 +1,28 @@
+{{/* ── Services ─────────────────────────────────────────────────────────────── */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.backend.name }}-svc
+  namespace: {{ .Values.global.namespace }}
+spec:
+  selector:
+    app: {{ .Values.backend.name }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Values.backend.port }}
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.frontend.name }}-svc
+  namespace: {{ .Values.global.namespace }}
+spec:
+  selector:
+    app: {{ .Values.frontend.name }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Values.frontend.port }}
+  type: ClusterIP
